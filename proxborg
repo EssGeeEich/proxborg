@@ -116,7 +116,7 @@ USAGE: proxborg vmid|hostname[:[!]] @pool[:[!]] localpath [...]
     hostname	hostname of vm
       (Must be unique. Storing multiple vm's with
       the same hostname is supported only using numerical id's.)
-    @pool	all vm's belongning to pool
+    @pool	all vm's belonging to pool
 
     <no suffix>	get vm image from vzdump
     :		dump lxc container as full directory tree (good idea!)
@@ -251,7 +251,7 @@ function find_vm() {
       fi
       if [ -n "$A" -a -n "$B" ] ; then
          # should never happen :-)
-         echo "${1}: vm id ambigous - skipping (WARNING)" >&2
+         echo "${1}: vm id ambiguous - skipping (WARNING)" >&2
          return 1
       fi
       VMID="${1}"
@@ -269,7 +269,7 @@ function find_vm() {
       A=`pvesh get /nodes/$MYHOSTNAME/lxc --output-format json|jq -r ".[] | select(.name==\"$1\") | .vmid"|tr "\n" " "|sed -e 's/ $//'`
       B=`pvesh get /nodes/$MYHOSTNAME/qemu --output-format json|jq -r ".[] | select(.name==\"$1\") | .vmid"|tr "\n" " "|sed -e 's/ $//'`
       if [ -n "$A" -a -n "$B" ]; then
-         echo "${1}: vm name ambigous - found ids: $A $B - skipping (WARNING)" >&2
+         echo "${1}: vm name ambiguous - found ids: $A $B - skipping (WARNING)" >&2
          return 1
       fi
       if [ -z "$A" -a -z "$B" ]; then
@@ -285,7 +285,7 @@ function find_vm() {
             VMID="$A"
             echo "$VMHOSTNAME: id=$VMID" >&2
             return 0;;
-         *) echo "${1}: vm name ambigous - found ids: $A - skipping (WARNING)" >&2
+         *) echo "${1}: vm name ambiguous - found ids: $A - skipping (WARNING)" >&2
             return 1;;
       esac
       # qemu?
@@ -298,7 +298,7 @@ function find_vm() {
             VMID="$B"
             echo "$VMHOSTNAME: id=$VMID" >&2
             return 0;;
-         *) echo "${1}: vm name ambigous - found ids: $B - skipping (WARNING)" >&2
+         *) echo "${1}: vm name ambiguous - found ids: $B - skipping (WARNING)" >&2
             return 1;;
       esac
       fi
@@ -308,11 +308,11 @@ function find_vm() {
 function vm_snapshot() {
    echo -n "$VMID: snapshoting... " >&2
    case "$VMTYPE" in
-      "lxc")	if ( pct snapshot $VMID $SNAPNAME --description "borgprox snapshot $SNAP_SUFFIX" >/dev/null ); then
+      "lxc")	if ( pct snapshot $VMID $SNAPNAME --description "proxborg snapshot $SNAP_SUFFIX" >/dev/null ); then
          echo "done" >&2
          return 0
          fi;;
-      "qemu")	if ( qm snapshot $VMID $SNAPNAME --description "borgprox snapshot $SNAP_SUFFIX"  >/dev/null ); then
+      "qemu")	if ( qm snapshot $VMID $SNAPNAME --description "proxborg snapshot $SNAP_SUFFIX"  >/dev/null ); then
          echo "done" >&2
          return 0
          fi;;
