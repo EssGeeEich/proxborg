@@ -1,5 +1,10 @@
-export BORG_REPO=ssh://your_borgbase_URL/./repo
-export BORG_PASSPHRASE=your_repo_passphrase 
+#! /bin/sh
+
+echo Usage: proxborg-restore-latest REPO NEW_VM_ID
+
+export BORG_REPO=$1
+NEW_VMID=$2
+# BORG_PASSPHRASE=your_repo_passphrase 
 ARCHIVES=`borg list`
 echo "Archives:"
 echo "$ARCHIVES"
