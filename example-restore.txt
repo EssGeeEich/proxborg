@@ -1,0 +1,10 @@
+BORG_REPO=ssh://your_borgbase_URL/./repo
+BORG_PASSPHRASE=your_repo_passphrase 
+ARCHIVES=`borg list`
+echo "Archives:"
+echo "$ARCHIVES"
+LATEST=`echo "$ARCHIVES" | tail -1 | cut -f1 -d' '`
+echo "Auto-choosing last archive: $LATEST"
+echo "Press any key to continue"
+read -n 1
+./proxborg-restore $NEW_VMID "$LATEST"

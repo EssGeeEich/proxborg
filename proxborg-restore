@@ -1,0 +1,28 @@
+#! /bin/bash
+
+set -e
+
+# Should already be in env:
+RESTORE_TO_VMID=$1
+ARCHIVE=$2
+
+# Get the details of the original container
+CONFIG=`borg extract --verbose "::$ARCHIVE" etc/vzdump/pct.conf --stdout`
+
+echo "Got config:"
+echo "$CONFIG"
+
+# Convert details into parameters for "pct restore"
+# Note the extra work to convert the disk parameters into specific disks, into just POOL:SIZE
+# format, so the disks are automatically created.
+PCT_ARGS=`echo "$CONFIG" | sed 's/\(.*\): \(.*\)/--\1 \2/' | sed "s/:vm-[^,]*\(.*\),size=\([0-9]*\)G\([^ ]*\)/:\2\1/g" | tr '\n' ' '
+# OLD BROKEN sed 's/:vm-[^, ]*,size=\([0-9]*\)G/:\1/'`
+
+
+echo "Using with args: $PCT_ARGS"
+
+echo "Press any key to continue restore..."
+read -n 1
+
+borg export-tar --progress --verbose "::$ARCHIVE" - | pct restore $RESTORE_TO_VMID - $PCT_ARGS
+
