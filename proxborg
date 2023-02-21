@@ -581,7 +581,7 @@ done
 [ ${#PRUNE_LIST[*]} -eq 0  ] || [ -z "$PRUNE_OPTS" ] || [ "$EXIT_STATUS" -gt 1 ] || [ "$EXIT_STATUS" -eq 1 -a "$PRUNE_ON_WARNINGS" != "1" ] || {
    echo "Pruning old archives... " >&2
    for A in ${PRUNE_LIST[@]}; do
-      borg prune --prefix "$A" $PRUNE_OPTS
+      borg prune --glob-archives "$A*" $PRUNE_OPTS
    done
 }
 
