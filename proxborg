@@ -209,7 +209,7 @@ function backup_dataset() {
       echo -n "dumping dataset $1 - calling borg [${NAME}${SNAP_SUFFIX}]... " >&2
       (
       cd "$1/.zfs/snapshot/$SNAPNAME"
-      borg create --one-file-system $BORG_OPTS "::${NAME}${SNAP_SUFFIX}" .
+      BORG_FILES_CACHE_SUFFIX="${VMID}" borg create --one-file-system $BORG_OPTS "::${NAME}${SNAP_SUFFIX}" .
       )
       if [ "$?" -eq "0" ]; then
          echo "done" >&2
@@ -307,7 +307,7 @@ function find_vm() {
 
 
 function vm_snapshot() {
-   echo -n "$VMID: snapshoting... " >&2
+   echo -n "$VMID: snapshotting... " >&2
    case "$VMTYPE" in
       "lxc")	if ( pct snapshot $VMID $SNAPNAME --description "proxborg snapshot $SNAP_SUFFIX" >/dev/null ); then
          echo "done" >&2
@@ -351,9 +351,21 @@ function get_mountpoints() {
    if ( pvesm status -enabled -storage `echo $A|cut -f1 -d:` >/dev/null 2>&1 ); then
       B=`pvesm path $A`
       if [ -d "$B/.zfs/snapshot/$SNAPNAME" ]; then
+         # this is a zfs snapshot
          echo "/ $B 1"
       else
-         echo "$VMID: invalid storage path: $B (skipping)" >&2
+         # could be an LVM snapshot, try to activate the volume
+         SNAP_VG=`echo $B | cut -f3 -d'/'`
+         SNAP_VOL="snap_`echo $B | cut -f4 -d'/'`_$SNAPNAME"
+         B="/dev/$SNAP_VG/$SNAP_VOL"
+         # Got to activate the volume... -K ignores the skip-activation flag
+         lvchange -a y -K "$SNAP_VG/$SNAP_VOL"
+         if [ -a "$B" ]; then
+            echo "/ $B 1"
+         else
+            echo "$VMID: invalid storage path: $B (abort)" >&2
+            update_status 1   # it is unlikely that we want to skip! abort!
+         fi
       fi
    else
       echo "$VMID: invalid storage: $A (skipping)" >&2
@@ -363,13 +375,23 @@ function get_mountpoints() {
       if ( pvesm status -enabled -storage `echo $A|cut -f1 -d:` >/dev/null 2>&1 ); then
          C=`echo "$A"|sed -s 's/^.*,mp=//'|cut -f1 -d,`
          if [ -z "$C" ]; then
-            echo "$VMID: invaild mountpoint: $A (skipping)" >&2
+            echo "$VMID: invalid mountpoint: $A (skipping)" >&2
             continue
          fi
          B=`echo $A|cut -d, -f1|xargs pvesm path`
          if ! [ -d "$B/.zfs/snapshot/$SNAPNAME" ]; then
-            echo "$VMID: invalid storage path: $B (skipping)" >&2
-            continue
+            # not a zfs snapshot...
+            # it could be an LVM snapshot, try to activate the volume
+            SNAP_VG=`echo $B | cut -f3 -d'/'`
+            SNAP_VOL="snap_`echo $B | cut -f4 -d'/'`_$SNAPNAME"
+            B="/dev/$SNAP_VG/$SNAP_VOL"
+            # Got to activate the volume... -K ignores the skip-activation flag
+            lvchange -a y -K "$SNAP_VG/$SNAP_VOL"
+            if ! [ -a "$B" ]; then
+               echo "$VMID: invalid storage path: $B (abort)" >&2
+               update_status 1   # it is unlikely that we want to skip! abort!
+               continue
+            fi
          fi
          if echo "$A"|grep ",backup=1" >/dev/null 2>&1; then
             echo "$C $B 1"
@@ -409,7 +431,14 @@ function do_lxc_borgbackup() {
    fi
    PROCESSED_VMIDSB="$PROCESSED_VMIDSB $VMID"
 
-   TMP_DIR=$(mktemp -d -t proxborg-XXXXXXXXXX)
+   # TMP_DIR=$(mktemp -d -t proxborg-XXXXXXXXXX)
+   TMP_DIR="/tmp/proxborg-dump-$VMID"  # always the same folder, to help with borg file cache
+   if [ -d "$TMP_DIR" ]; then
+      echo "$VMID: tmpdir already exists! Can only run one dump at a time PER vm/id (ERROR)" >&2
+      update_status 2
+      return 2
+   fi
+   mkdir "$TMP_DIR"
    if [ ! -d "$TMP_DIR" ]; then
       echo "$VMID: unable to create tmpdir. (ERROR)" >&2
       update_status 2
@@ -431,12 +460,27 @@ function do_lxc_borgbackup() {
       [ "$C" = "1" ] || [ "$DUMP_ALL" = "1" ] || continue
       echo -n "$VMID: mounting $A... " >&2
       mkdir -p "$TMP_DIR/root/$A"
-      UPPER_DIR=`mktemp -d -p $TMP_DIR`
-      chown --reference="$B/.zfs/snapshot/$SNAPNAME/." $UPPER_DIR
-      chmod --reference="$B/.zfs/snapshot/$SNAPNAME/." $UPPER_DIR
-      getfacl "$B/.zfs/snapshot/$SNAPNAME/." 2>/dev/null| setfacl --set-file=- $UPPER_DIR
-      WORK_DIR=`mktemp -d -p $TMP_DIR`
-      if ( ! fuse-overlayfs -o "lowerdir=$B/.zfs/snapshot/$SNAPNAME,upperdir=$UPPER_DIR,workdir=$WORK_DIR$FUSE_OPTS" "$TMP_DIR/root/$A" 2>/dev/null ); then
+      # UPPER_DIR=`mktemp -d -p $TMP_DIR`
+      # WORK_DIR=`mktemp -d -p $TMP_DIR`
+      DIR_SUFFIX=`echo $A | tr / -`
+      echo "Dir Suffix: $DIR_SUFFIX"
+      UPPER_DIR="$TMP_DIR/upper-$DIR_SUFFIX"
+      WORK_DIR="$TMP_DIR/work-$DIR_SUFFIX"
+      mkdir "$UPPER_DIR" "$WORK_DIR"
+
+      LOWER_MOUNTED=0
+      LOWER_DIR="$TMP_DIR/lower-$DIR_SUFFIX"
+      if [ -d "$B/.zfs/snapshot/$SNAPNAME" ]; then
+         chown --reference="$B/.zfs/snapshot/$SNAPNAME/." $UPPER_DIR
+         chmod --reference="$B/.zfs/snapshot/$SNAPNAME/." $UPPER_DIR
+         getfacl "$B/.zfs/snapshot/$SNAPNAME/." 2>/dev/null| setfacl --set-file=- $UPPER_DIR
+         LOWER_DIR="$B/.zfs/snapshot/$SNAPNAME" # override lower with zfs snapshot dir
+      else
+         mkdir "$LOWER_DIR"
+         mount "$B" "$LOWER_DIR"
+         LOWER_MOUNTED=1
+      fi
+      if ( ! fuse-overlayfs -o "lowerdir=$LOWER_DIR,upperdir=$UPPER_DIR,workdir=$WORK_DIR$FUSE_OPTS" "$TMP_DIR/root/$A" 2>/dev/null ); then
          echo "failed" >&2
          update_status 2
          ABORT=1
@@ -465,8 +509,9 @@ function do_lxc_borgbackup() {
 
    (
    cd "$TMP_DIR/root"
-   echo -n "$VMID: dumping directory tree - calling borg [${NAME}${SNAP_SUFFIX}]... " >&2
-   borg create --numeric-owner $BORG_OPTS "::${NAME}${SNAP_SUFFIX}" ./ --exclude 'lost+found' --exclude './tmp/?*' --exclude './var/tmp/?*' --exclude './var/run/?*.pid'
+   echo "$VMID: dumping directory tree - calling borg [${NAME}${SNAP_SUFFIX}]... " >&2
+   # use BORG_FILES_CACHE_SUFFIX to help with borg's file cache
+   BORG_FILES_CACHE_SUFFIX="${VMID}" borg create --numeric-ids $BORG_OPTS "::${NAME}${SNAP_SUFFIX}" ./ --exclude 'lost+found' --exclude './tmp/?*' --exclude './var/tmp/?*' --exclude './var/run/?*.pid'
    )
 
    if [ "$?" -eq "0" ]; then
@@ -486,11 +531,14 @@ function do_lxc_borgbackup() {
       echo "done" >&2
    fi
 
+   if [ "$LOWER_MOUNTED" = "1" ]; then
+      umount "$TMP_DIR"/lower*
+   fi
+
    VM_MOUNTPOINTS=
    vm_delsnapshot || update_status $?
 
-   umount "$TMP_DIR"
-   rm -rf "$TMP_DIR"
+   umount "$TMP_DIR" && rm -rf "$TMP_DIR"
    return 0
 }
 
