@@ -98,13 +98,13 @@ echo "proxborg - Proxmox with BorgBackup made easy" >&2
 
 NECESSARY_EXECUTABLES="borg cat cut dd date echo getfacl grep head hostname jq pct printf pvesh pvesm qm realpath sed setfacl sleep sort tr vzdump xargs zfs"
 if ! which $NECESSARY_EXECUTABLES >/dev/null 2>&1; then
-    echo "Missing binaries!" >&2
-    echo "Make sure these tools are available: $NECESSARY_EXECUTABLES" >&2
-    exit 255
+   echo "Missing binaries!" >&2
+   echo "Make sure these tools are available: $NECESSARY_EXECUTABLES" >&2
+   exit 255
 fi
 
 function help {
-cat >&2 <<EOF
+   cat >&2 <<EOF
 
 USAGE: proxborg vmid|hostname[:[!]] @pool[:[!]] localpath [...]
 
@@ -113,8 +113,8 @@ USAGE: proxborg vmid|hostname[:[!]] @pool[:[!]] localpath [...]
 
     vmid	numeric id of vm
     hostname	hostname of vm
-		(Must be unique. Storing multiple vm's with
-		the same hostname is supported only using numerical id's.)
+      (Must be unique. Storing multiple vm's with
+      the same hostname is supported only using numerical id's.)
     @pool	all vm's belongning to pool
 
     <no suffix>	get vm image from vzdump
@@ -127,431 +127,431 @@ exit 255
 }
 
 function update_status() {
-    [ $EXIT_STATUS -lt $1 ] && EXIT_STATUS=$1
-    return $1
+   [ $EXIT_STATUS -lt $1 ] && EXIT_STATUS=$1
+   return $1
 }
 
 
 function set_snapsuffix() {
-#    SNAP_SUFFIX=`date +%Y-%m-%dT%H:%M:%S`
-    SNAP_SUFFIX=`date +%Y_%m_%d-%H_%M_%S`
+   #    SNAP_SUFFIX=`date +%Y-%m-%dT%H:%M:%S`
+   SNAP_SUFFIX=`date +%Y_%m_%d-%H_%M_%S`
 }
 
 
 function pipe_if_not_empty () {
-  head=$(dd bs=1 count=1 2>/dev/null; echo a)
-  head=${head%a}
-  if [ "x$head" != x"" ]; then
-    { printf %s "$head"; cat; } | "$@"
-  fi
+   head=$(dd bs=1 count=1 2>/dev/null; echo a)
+   head=${head%a}
+   if [ "x$head" != x"" ]; then
+      { printf %s "$head"; cat; } | "$@"
+   fi
 }
 
 
 function do_backup() {
-    local NAME
-    local NAME_SUFFIX
+   local NAME
+   local NAME_SUFFIX
 
-    if ( echo "$PROCESSED_VMIDS"|grep -Fwq "$VMID" ); then
-	echo "$VMID: vm already dumped, skipping" >&2
-	return 0
-    fi
-    PROCESSED_VMIDS="$PROCESSED_VMIDS $VMID"
+   if ( echo "$PROCESSED_VMIDS"|grep -Fwq "$VMID" ); then
+      echo "$VMID: vm already dumped, skipping" >&2
+      return 0
+   fi
+   PROCESSED_VMIDS="$PROCESSED_VMIDS $VMID"
 
-    if [ -n "$VMHOSTNAME" -a "$HOSTNAME_IN_ARCHIVENAME" = "1" ]; then NAME="$VMHOSTNAME-"; else NAME="vzdump-"; fi
-    NAME="$NAME$VMTYPE-$VMID-"
-    if [ "$VMTYPE" = "lxc" ]; then NAME_SUFFIX=".tar"
-    else			   NAME_SUFFIX=".vma"
-    fi
-    echo -n "$VMID: dumping image - calling vzdump+borg [${NAME}${SNAP_SUFFIX}${NAME_SUFFIX}]... " >&2
-    set -o pipefail
-    vzdump $VMID --compress 0 --mode snapshot --dumpdir /tmp --stdout $VZDUMP_OPTS | pipe_if_not_empty borg create --stdin-name "${NAME}${SNAP_SUFFIX}${NAME_SUFFIX}" $BORG_OPTS "::${NAME}${SNAP_SUFFIX}${NAME_SUFFIX}" -
-    if [ "$?" -eq "0" ]; then
-	echo "done"
-	PRUNE_LIST+=("$NAME")
-	return 0
-    fi
-    echo "failed (ERROR)" >&2
-    return 2
+   if [ -n "$VMHOSTNAME" -a "$HOSTNAME_IN_ARCHIVENAME" = "1" ]; then NAME="$VMHOSTNAME-"; else NAME="vzdump-"; fi
+   NAME="$NAME$VMTYPE-$VMID-"
+   if [ "$VMTYPE" = "lxc" ]; then NAME_SUFFIX=".tar"
+   else			   NAME_SUFFIX=".vma"
+   fi
+   echo -n "$VMID: dumping image - calling vzdump+borg [${NAME}${SNAP_SUFFIX}${NAME_SUFFIX}]... " >&2
+   set -o pipefail
+   vzdump $VMID --compress 0 --mode snapshot --dumpdir /tmp --stdout $VZDUMP_OPTS | pipe_if_not_empty borg create --stdin-name "${NAME}${SNAP_SUFFIX}${NAME_SUFFIX}" $BORG_OPTS "::${NAME}${SNAP_SUFFIX}${NAME_SUFFIX}" -
+   if [ "$?" -eq "0" ]; then
+      echo "done"
+      PRUNE_LIST+=("$NAME")
+      return 0
+   fi
+   echo "failed (ERROR)" >&2
+   return 2
 }
 
 
 function backup_dataset() {
-    # $1 = absolute path to mounted dataset without trailing slash
-    local FSNAME
-    local NAME=
-    local ABORT=0
+   # $1 = absolute path to mounted dataset without trailing slash
+   local FSNAME
+   local NAME=
+   local ABORT=0
 
-    echo -n "snapshotting $1... " >&2
-    FSNAME=`zfs list -t filesystem -H|grep -P "\t$1\$"|cut -f1 -d$'\t'`
-    if [ -z "$FSNAME" ]; then
-	echo "dataset not found (ERROR)" >&2
-	return 2
-    fi
-    if ( zfs snapshot "$FSNAME@$SNAPNAME" ); then
-	echo "created $FSNAME@$SNAPNAME" >&2
-    else
-	echo "failed (ERROR)" >&2
-	return 2
-    fi
+   echo -n "snapshotting $1... " >&2
+   FSNAME=`zfs list -t filesystem -H|grep -P "\t$1\$"|cut -f1 -d$'\t'`
+   if [ -z "$FSNAME" ]; then
+      echo "dataset not found (ERROR)" >&2
+      return 2
+   fi
+   if ( zfs snapshot "$FSNAME@$SNAPNAME" ); then
+      echo "created $FSNAME@$SNAPNAME" >&2
+   else
+      echo "failed (ERROR)" >&2
+      return 2
+   fi
 
-    if [ ! -d "$1/.zfs/snapshot/$SNAPNAME" ]; then
-	echo "$1 unreadable (ERROR)" >&2
-	ABORT=2
-	# do not exit yet, snapshot still must be destroyed
-    fi
+   if [ ! -d "$1/.zfs/snapshot/$SNAPNAME" ]; then
+      echo "$1 unreadable (ERROR)" >&2
+      ABORT=2
+      # do not exit yet, snapshot still must be destroyed
+   fi
 
-    if [ "$ABORT" = "0" ]; then
-	[ "$HOSTNAME_IN_ARCHIVENAME" = 1 ] && NAME=$MYHOSTNAME || NAME="dataset"
-	NAME="$NAME`echo "$1"|sed -s 's/[^[:alnum:]-]/-/g'`--"
-#							   ^^ delimiter (make sure not to prune subfolders)
-	echo -n "dumping dataset $1 - calling borg [${NAME}${SNAP_SUFFIX}]... " >&2
-	(
-	    cd "$1/.zfs/snapshot/$SNAPNAME"
-	    borg create --one-file-system $BORG_OPTS "::${NAME}${SNAP_SUFFIX}" .
-	)
-	if [ "$?" -eq "0" ]; then
-	    echo "done" >&2
-	    PRUNE_LIST+=("$NAME")
-	else
-	    echo "finished unclean (ERROR)" >&2
-	    ABORT=2
-	fi
-    fi
+   if [ "$ABORT" = "0" ]; then
+      [ "$HOSTNAME_IN_ARCHIVENAME" = 1 ] && NAME=$MYHOSTNAME || NAME="dataset"
+      NAME="$NAME`echo "$1"|sed -s 's/[^[:alnum:]-]/-/g'`--"
+      #							   ^^ delimiter (make sure not to prune subfolders)
+      echo -n "dumping dataset $1 - calling borg [${NAME}${SNAP_SUFFIX}]... " >&2
+      (
+      cd "$1/.zfs/snapshot/$SNAPNAME"
+      borg create --one-file-system $BORG_OPTS "::${NAME}${SNAP_SUFFIX}" .
+      )
+      if [ "$?" -eq "0" ]; then
+         echo "done" >&2
+         PRUNE_LIST+=("$NAME")
+      else
+         echo "finished unclean (ERROR)" >&2
+         ABORT=2
+      fi
+      fi
 
-    echo -n "destroying snapshot $FSNAME@$SNAPNAME... " >&2
-    if ( zfs destroy "$FSNAME@$SNAPNAME" ); then
-	echo "done" >&2
-	return $ABORT
-    else
-	echo "failed (WARNING)" >&2
-	[ "$ABORT" -ge 1 ] && return $ABORT
-	return 1
-    fi
-}
+      echo -n "destroying snapshot $FSNAME@$SNAPNAME... " >&2
+      if ( zfs destroy "$FSNAME@$SNAPNAME" ); then
+         echo "done" >&2
+         return $ABORT
+      else
+         echo "failed (WARNING)" >&2
+         [ "$ABORT" -ge 1 ] && return $ABORT
+         return 1
+      fi
+   }
 
 
 function find_vm() {
-    local A
-    local B
-    VMHOSTNAME=""
-    VMID=""
-    VMTYPE=""
-    VMCONFIG=""
+   local A
+   local B
+   VMHOSTNAME=""
+   VMID=""
+   VMTYPE=""
+   VMCONFIG=""
 
-    if [[ "${1}" =~ ^[0-9]+$ ]]; then
-	# by numeric id
-#	A=`pct list|grep "^${1} "|sed -e 's/ *$//g'|grep -oE '[^ ]+$'`
-#	B=`qm list|sed -e 's/^ *//' -e 's/  \+/ /g'|grep "^${1} "|cut -d ' ' -f 2|tr "\n" " "|sed 's/ *$//g'`
-	A=`pvesh get /nodes/$MYHOSTNAME/lxc --output-format json|jq -j ".[] | select(.vmid==\"$1\") | .name"`
-	B=`pvesh get /nodes/$MYHOSTNAME/qemu --output-format json|jq -j ".[] | select(.vmid==\"$1\") | .name"`
-	if [ -z "$A" -a -z "$B" ] ; then
-	    echo "${1}: vm id not found (WARNING)" >&2
-	    return 1
-	fi
-	if [ -n "$A" -a -n "$B" ] ; then
-	    # should never happen :-)
-	    echo "${1}: vm id ambigous - skipping (WARNING)" >&2
-	    return 1
-	fi
-	VMID="${1}"
-	if [ -n "$A" ]; then
-	    VMHOSTNAME="$A"
-	    VMTYPE="lxc"
-	else
-	    VMHOSTNAME="$B"
-	    VMTYPE="qemu"
-	fi
-    else
-	# by hostname
-#	A=`pct list|grep " ${1} *$"|cut -f 1 -d ' '|tr "\n" " "|sed -e 's/ $//'`
-#	B=`qm list|sed -e 's/^ *//' -e 's/  \+/ /g'|cut -d ' ' -f 1,2|grep " ${1}$"|cut -d ' ' -f 1|tr "\n" " "|sed -e 's/ $//'`
-	A=`pvesh get /nodes/$MYHOSTNAME/lxc --output-format json|jq -r ".[] | select(.name==\"$1\") | .vmid"|tr "\n" " "|sed -e 's/ $//'`
-	B=`pvesh get /nodes/$MYHOSTNAME/qemu --output-format json|jq -r ".[] | select(.name==\"$1\") | .vmid"|tr "\n" " "|sed -e 's/ $//'`
-	if [ -n "$A" -a -n "$B" ]; then
-	    echo "${1}: vm name ambigous - found ids: $A $B - skipping (WARNING)" >&2
-	    return 1
-	fi
-	if [ -z "$A" -a -z "$B" ]; then
-	    echo "${1}: vm name not found (WARNING)" >&2
-	    return 1
-	fi
-	# lxc?
-	case "`echo $A|wc -w`" in
-	    "0") # qemu?
-		 ;;
-	    "1") VMHOSTNAME="${1}"
-		 VMTYPE="lxc"
-		 VMID="$A"
-		 echo "$VMHOSTNAME: id=$VMID" >&2
-		 return 0;;
-	    *) echo "${1}: vm name ambigous - found ids: $A - skipping (WARNING)" >&2
-	       return 1;;
-        esac
-	# qemu?
-	case "`echo $B|wc -w`" in
-	    "0") # should never happen :-)
-		 echo "${1}: vm name not found (WARNING)" >&2
-		 return 1;;
-	    "1") VMHOSTNAME="${1}"
-		 VMTYPE="qemu"
-		 VMID="$B"
-		 echo "$VMHOSTNAME: id=$VMID" >&2
-		 return 0;;
-	    *) echo "${1}: vm name ambigous - found ids: $B - skipping (WARNING)" >&2
-	       return 1;;
-        esac
-    fi
-}
+   if [[ "${1}" =~ ^[0-9]+$ ]]; then
+      # by numeric id
+      #	A=`pct list|grep "^${1} "|sed -e 's/ *$//g'|grep -oE '[^ ]+$'`
+      #	B=`qm list|sed -e 's/^ *//' -e 's/  \+/ /g'|grep "^${1} "|cut -d ' ' -f 2|tr "\n" " "|sed 's/ *$//g'`
+      A=`pvesh get /nodes/$MYHOSTNAME/lxc --output-format json|jq -j ".[] | select(.vmid==\"$1\") | .name"`
+      B=`pvesh get /nodes/$MYHOSTNAME/qemu --output-format json|jq -j ".[] | select(.vmid==\"$1\") | .name"`
+      if [ -z "$A" -a -z "$B" ] ; then
+         echo "${1}: vm id not found (WARNING)" >&2
+         return 1
+      fi
+      if [ -n "$A" -a -n "$B" ] ; then
+         # should never happen :-)
+         echo "${1}: vm id ambigous - skipping (WARNING)" >&2
+         return 1
+      fi
+      VMID="${1}"
+      if [ -n "$A" ]; then
+         VMHOSTNAME="$A"
+         VMTYPE="lxc"
+      else
+         VMHOSTNAME="$B"
+         VMTYPE="qemu"
+      fi
+   else
+      # by hostname
+      #	A=`pct list|grep " ${1} *$"|cut -f 1 -d ' '|tr "\n" " "|sed -e 's/ $//'`
+      #	B=`qm list|sed -e 's/^ *//' -e 's/  \+/ /g'|cut -d ' ' -f 1,2|grep " ${1}$"|cut -d ' ' -f 1|tr "\n" " "|sed -e 's/ $//'`
+      A=`pvesh get /nodes/$MYHOSTNAME/lxc --output-format json|jq -r ".[] | select(.name==\"$1\") | .vmid"|tr "\n" " "|sed -e 's/ $//'`
+      B=`pvesh get /nodes/$MYHOSTNAME/qemu --output-format json|jq -r ".[] | select(.name==\"$1\") | .vmid"|tr "\n" " "|sed -e 's/ $//'`
+      if [ -n "$A" -a -n "$B" ]; then
+         echo "${1}: vm name ambigous - found ids: $A $B - skipping (WARNING)" >&2
+         return 1
+      fi
+      if [ -z "$A" -a -z "$B" ]; then
+         echo "${1}: vm name not found (WARNING)" >&2
+         return 1
+      fi
+      # lxc?
+      case "`echo $A|wc -w`" in
+         "0") # qemu?
+            ;;
+         "1") VMHOSTNAME="${1}"
+            VMTYPE="lxc"
+            VMID="$A"
+            echo "$VMHOSTNAME: id=$VMID" >&2
+            return 0;;
+         *) echo "${1}: vm name ambigous - found ids: $A - skipping (WARNING)" >&2
+            return 1;;
+      esac
+      # qemu?
+      case "`echo $B|wc -w`" in
+         "0") # should never happen :-)
+            echo "${1}: vm name not found (WARNING)" >&2
+            return 1;;
+         "1") VMHOSTNAME="${1}"
+            VMTYPE="qemu"
+            VMID="$B"
+            echo "$VMHOSTNAME: id=$VMID" >&2
+            return 0;;
+         *) echo "${1}: vm name ambigous - found ids: $B - skipping (WARNING)" >&2
+            return 1;;
+      esac
+      fi
+   }
 
 
 function vm_snapshot() {
-    echo -n "$VMID: snapshoting... " >&2
-    case "$VMTYPE" in
-	"lxc")	if ( pct snapshot $VMID $SNAPNAME --description "borgprox snapshot $SNAP_SUFFIX" >/dev/null ); then
-		    echo "done" >&2
-		    return 0
-		fi;;
-	"qemu")	if ( qm snapshot $VMID $SNAPNAME --description "borgprox snapshot $SNAP_SUFFIX"  >/dev/null ); then
-		    echo "done" >&2
-		    return 0
-		fi;;
-    esac
-    echo "error" >&2
-    return 2
+   echo -n "$VMID: snapshoting... " >&2
+   case "$VMTYPE" in
+      "lxc")	if ( pct snapshot $VMID $SNAPNAME --description "borgprox snapshot $SNAP_SUFFIX" >/dev/null ); then
+         echo "done" >&2
+         return 0
+         fi;;
+      "qemu")	if ( qm snapshot $VMID $SNAPNAME --description "borgprox snapshot $SNAP_SUFFIX"  >/dev/null ); then
+         echo "done" >&2
+         return 0
+         fi;;
+   esac
+   echo "error" >&2
+   return 2
 }
 
 
 function vm_delsnapshot() {
-    echo -n "$VMID: deleting snapshot... " >&2
-    sleep "$SLEEP_BEFORE_DELETE"
-    case "$VMTYPE" in
-	"lxc")	if ( pct delsnapshot $VMID $SNAPNAME >/dev/null ); then
-		    echo "done" >&2
-		    return 0
-		fi;;
-	"qemu")	if ( qm delsnapshot $VMID $SNAPNAME >/dev/null ); then
-		    echo "done" >&2
-		    return 0
-		fi;;
-    esac
-    echo "failed" >&2
-    return 1
+   echo -n "$VMID: deleting snapshot... " >&2
+   sleep "$SLEEP_BEFORE_DELETE"
+   case "$VMTYPE" in
+      "lxc")	if ( pct delsnapshot $VMID $SNAPNAME >/dev/null ); then
+         echo "done" >&2
+         return 0
+         fi;;
+      "qemu")	if ( qm delsnapshot $VMID $SNAPNAME >/dev/null ); then
+         echo "done" >&2
+         return 0
+         fi;;
+   esac
+   echo "failed" >&2
+   return 1
 }
 
 
 function get_mountpoints() {
-    [ "$VMTYPE" == "lxc" ] || return
-    local A
-    local B
-    local C
-    #rootfs:
-    A=`echo "$VMCONFIG"|grep "^rootfs: "|cut -f2 -d' '|cut -f1 -d,`
-    if ( pvesm status -enabled -storage `echo $A|cut -f1 -d:` >/dev/null 2>&1 ); then
-	B=`pvesm path $A`
-	if [ -d "$B/.zfs/snapshot/$SNAPNAME" ]; then
-	    echo "/ $B 1"
-	else
-	    echo "$VMID: invalid storage path: $B (skipping)" >&2
-	fi
-    else
-	echo "$VMID: invalid storage: $A (skipping)" >&2
-    fi
-    #mountpoints:
-    for A in `echo "$VMCONFIG"|grep -E '^mp[0-9]+: '|cut -d ' ' -f2`; do
-	if ( pvesm status -enabled -storage `echo $A|cut -f1 -d:` >/dev/null 2>&1 ); then
-	    C=`echo "$A"|sed -s 's/^.*,mp=//'|cut -f1 -d,`
-	    if [ -z "$C" ]; then
-		echo "$VMID: invaild mountpoint: $A (skipping)" >&2
-		 continue
-	    fi
-	    B=`echo $A|cut -d, -f1|xargs pvesm path`
-            if ! [ -d "$B/.zfs/snapshot/$SNAPNAME" ]; then
-                echo "$VMID: invalid storage path: $B (skipping)" >&2
-		continue
-            fi
-	    if echo "$A"|grep ",backup=1" >/dev/null 2>&1; then
-		echo "$C $B 1"
-	    else
-		echo "$C $B 0"
-	    fi
-	else
-	    echo "$VMID: invalid storage: $A (skipping)" >&2
-	    continue
-	fi
-    done
+   [ "$VMTYPE" == "lxc" ] || return
+   local A
+   local B
+   local C
+   #rootfs:
+   A=`echo "$VMCONFIG"|grep "^rootfs: "|cut -f2 -d' '|cut -f1 -d,`
+   if ( pvesm status -enabled -storage `echo $A|cut -f1 -d:` >/dev/null 2>&1 ); then
+      B=`pvesm path $A`
+      if [ -d "$B/.zfs/snapshot/$SNAPNAME" ]; then
+         echo "/ $B 1"
+      else
+         echo "$VMID: invalid storage path: $B (skipping)" >&2
+      fi
+   else
+      echo "$VMID: invalid storage: $A (skipping)" >&2
+   fi
+   #mountpoints:
+   for A in `echo "$VMCONFIG"|grep -E '^mp[0-9]+: '|cut -d ' ' -f2`; do
+      if ( pvesm status -enabled -storage `echo $A|cut -f1 -d:` >/dev/null 2>&1 ); then
+         C=`echo "$A"|sed -s 's/^.*,mp=//'|cut -f1 -d,`
+         if [ -z "$C" ]; then
+            echo "$VMID: invaild mountpoint: $A (skipping)" >&2
+            continue
+         fi
+         B=`echo $A|cut -d, -f1|xargs pvesm path`
+         if ! [ -d "$B/.zfs/snapshot/$SNAPNAME" ]; then
+            echo "$VMID: invalid storage path: $B (skipping)" >&2
+            continue
+         fi
+         if echo "$A"|grep ",backup=1" >/dev/null 2>&1; then
+            echo "$C $B 1"
+         else
+            echo "$C $B 0"
+         fi
+      else
+         echo "$VMID: invalid storage: $A (skipping)" >&2
+         continue
+      fi
+   done
 }
 
 
 function do_lxc_borgbackup() {
-    local A
-    local B
-    local C
-    local D
-    local TMP_DIR
-    local FUSE_MOUNTS=
-    local FUSE_OPTS=
-    local ABORT=0
-    local NAME=
-    local UPPER_DIR
-    local WORK_DIR
-    local VM_UNPRIVILEGED=0
+   local A
+   local B
+   local C
+   local D
+   local TMP_DIR
+   local FUSE_MOUNTS=
+   local FUSE_OPTS=
+   local ABORT=0
+   local NAME=
+   local UPPER_DIR
+   local WORK_DIR
+   local VM_UNPRIVILEGED=0
 
-    if ( echo "$PROCESSED_VMIDSB"|grep -Fwq "$VMID" ); then
-	echo "$VMID: vm already dumped, skipping" >&2
-	return 0
-    fi
-    if [ "$VMTYPE" != "lxc" ]; then
-    echo "$VMID: not lxc container - skipping (WARNING)" >&2
-	update_status 1
-	return 1
-    fi
-    PROCESSED_VMIDSB="$PROCESSED_VMIDSB $VMID"
+   if ( echo "$PROCESSED_VMIDSB"|grep -Fwq "$VMID" ); then
+      echo "$VMID: vm already dumped, skipping" >&2
+      return 0
+   fi
+   if [ "$VMTYPE" != "lxc" ]; then
+      echo "$VMID: not lxc container - skipping (WARNING)" >&2
+      update_status 1
+      return 1
+   fi
+   PROCESSED_VMIDSB="$PROCESSED_VMIDSB $VMID"
 
-    TMP_DIR=$(mktemp -d -t proxborg-XXXXXXXXXX)
-    if [ ! -d "$TMP_DIR" ]; then
-	echo "$VMID: unable to create tmpdir. (ERROR)" >&2
-	update_status 2
-	return 2
-    fi
-    mount -t tmpfs -o posixacl tmpfs "$TMP_DIR"
-    mkdir -p "$TMP_DIR/root"
+   TMP_DIR=$(mktemp -d -t proxborg-XXXXXXXXXX)
+   if [ ! -d "$TMP_DIR" ]; then
+      echo "$VMID: unable to create tmpdir. (ERROR)" >&2
+      update_status 2
+      return 2
+   fi
+   mount -t tmpfs -o posixacl tmpfs "$TMP_DIR"
+   mkdir -p "$TMP_DIR/root"
 
-    vm_snapshot || update_status $? || return $?
-    VMCONFIG=`pct config $VMID --snapshot $SNAPNAME`
-    VM_MOUNTPOINTS=`get_mountpoints| LC_ALL=C sort`
+   vm_snapshot || update_status $? || return $?
+   VMCONFIG=`pct config $VMID --snapshot $SNAPNAME`
+   VM_MOUNTPOINTS=`get_mountpoints| LC_ALL=C sort`
 
-    if (echo "$VMCONFIG"|grep -q '^[[:space:]]*unprivileged:[[:space:]][[:space:]]*1[[:space:]]*$' ); then
-	VM_UNPRIVILEGED=1
-	FUSE_OPTS=",uidmapping=100000:0:65536,gidmapping=100000:0:65536"
-    fi
+   if (echo "$VMCONFIG"|grep -q '^[[:space:]]*unprivileged:[[:space:]][[:space:]]*1[[:space:]]*$' ); then
+      VM_UNPRIVILEGED=1
+      FUSE_OPTS=",uidmapping=100000:0:65536,gidmapping=100000:0:65536"
+   fi
 
-    while read A B C; do
-	[ "$C" = "1" ] || [ "$DUMP_ALL" = "1" ] || continue
-	echo -n "$VMID: mounting $A... " >&2
-	mkdir -p "$TMP_DIR/root/$A"
-	UPPER_DIR=`mktemp -d -p $TMP_DIR`
-	chown --reference="$B/.zfs/snapshot/$SNAPNAME/." $UPPER_DIR
-	chmod --reference="$B/.zfs/snapshot/$SNAPNAME/." $UPPER_DIR
-	getfacl "$B/.zfs/snapshot/$SNAPNAME/." 2>/dev/null| setfacl --set-file=- $UPPER_DIR
-	WORK_DIR=`mktemp -d -p $TMP_DIR`
-	if ( ! fuse-overlayfs -o "lowerdir=$B/.zfs/snapshot/$SNAPNAME,upperdir=$UPPER_DIR,workdir=$WORK_DIR$FUSE_OPTS" "$TMP_DIR/root/$A" 2>/dev/null ); then
-	    echo "failed" >&2
-	    update_status 2
-	    ABORT=1
-	    break
-	fi
-	FUSE_MOUNTS="$A $FUSE_MOUNTS"
-	echo "done" >&2
-    done < <(echo "$VM_MOUNTPOINTS")
+   while read A B C; do
+      [ "$C" = "1" ] || [ "$DUMP_ALL" = "1" ] || continue
+      echo -n "$VMID: mounting $A... " >&2
+      mkdir -p "$TMP_DIR/root/$A"
+      UPPER_DIR=`mktemp -d -p $TMP_DIR`
+      chown --reference="$B/.zfs/snapshot/$SNAPNAME/." $UPPER_DIR
+      chmod --reference="$B/.zfs/snapshot/$SNAPNAME/." $UPPER_DIR
+      getfacl "$B/.zfs/snapshot/$SNAPNAME/." 2>/dev/null| setfacl --set-file=- $UPPER_DIR
+      WORK_DIR=`mktemp -d -p $TMP_DIR`
+      if ( ! fuse-overlayfs -o "lowerdir=$B/.zfs/snapshot/$SNAPNAME,upperdir=$UPPER_DIR,workdir=$WORK_DIR$FUSE_OPTS" "$TMP_DIR/root/$A" 2>/dev/null ); then
+         echo "failed" >&2
+         update_status 2
+         ABORT=1
+         break
+      fi
+      FUSE_MOUNTS="$A $FUSE_MOUNTS"
+      echo "done" >&2
+   done < <(echo "$VM_MOUNTPOINTS")
 
-    if [ "$ABORTED" != "1" -a  ! -d "$TMP_DIR/root/etc/vzdump" ]; then
-	mkdir -p "$TMP_DIR/root/etc/vzdump"
-#	chown 65534:65534 "$TMP_DIR/root/etc/vzdump"
-    fi
+   if [ "$ABORTED" != "1" -a  ! -d "$TMP_DIR/root/etc/vzdump" ]; then
+      mkdir -p "$TMP_DIR/root/etc/vzdump"
+      #	chown 65534:65534 "$TMP_DIR/root/etc/vzdump"
+   fi
 
-    if [ "$ABORTED" != "1" ]; then
-	echo "$VMCONFIG"|grep -Ev '^(parent|snaptime|description): ' >"$TMP_DIR/root/etc/vzdump/pct.conf"
-	chown 65534:65534 "$TMP_DIR/root/etc/vzdump/pct.conf"
-	if [ -e "/etc/pve/firewall/$VMID.fw" ]; then
-	    cat "/etc/pve/firewall/$VMID.fw" >"$TMP_DIR/root/etc/vzdump/pct.fw"
-	    chown 65534:65534 "$TMP_DIR/root/etc/vzdump/pct.fw"
-	fi
-    fi
+   if [ "$ABORTED" != "1" ]; then
+      echo "$VMCONFIG"|grep -Ev '^(parent|snaptime|description): ' >"$TMP_DIR/root/etc/vzdump/pct.conf"
+      chown 65534:65534 "$TMP_DIR/root/etc/vzdump/pct.conf"
+      if [ -e "/etc/pve/firewall/$VMID.fw" ]; then
+         cat "/etc/pve/firewall/$VMID.fw" >"$TMP_DIR/root/etc/vzdump/pct.fw"
+         chown 65534:65534 "$TMP_DIR/root/etc/vzdump/pct.fw"
+      fi
+   fi
 
-    if [ -n "$VMHOSTNAME" -a "$HOSTNAME_IN_ARCHIVENAME" = "1" ]; then NAME="$VMHOSTNAME-"; else NAME="dump-"; fi
-    NAME="$NAME$VMID-"
+   if [ -n "$VMHOSTNAME" -a "$HOSTNAME_IN_ARCHIVENAME" = "1" ]; then NAME="$VMHOSTNAME-"; else NAME="dump-"; fi
+   NAME="$NAME$VMID-"
 
-    (
-	cd "$TMP_DIR/root"
-	echo -n "$VMID: dumping directory tree - calling borg [${NAME}${SNAP_SUFFIX}]... " >&2
-	borg create --numeric-owner $BORG_OPTS "::${NAME}${SNAP_SUFFIX}" ./ --exclude 'lost+found' --exclude './tmp/?*' --exclude './var/tmp/?*' --exclude './var/run/?*.pid'
-    )
+   (
+   cd "$TMP_DIR/root"
+   echo -n "$VMID: dumping directory tree - calling borg [${NAME}${SNAP_SUFFIX}]... " >&2
+   borg create --numeric-owner $BORG_OPTS "::${NAME}${SNAP_SUFFIX}" ./ --exclude 'lost+found' --exclude './tmp/?*' --exclude './var/tmp/?*' --exclude './var/run/?*.pid'
+   )
 
-    if [ "$?" -eq "0" ]; then
-	echo "done" >&2
-	PRUNE_LIST+=("$NAME")
-    else 
-	echo "failed" >&2
-	update_status 2
-	ABORTED=1
-    fi
+   if [ "$?" -eq "0" ]; then
+      echo "done" >&2
+      PRUNE_LIST+=("$NAME")
+   else 
+      echo "failed" >&2
+      update_status 2
+      ABORTED=1
+   fi
 
-    if [ -n "$FUSE_MOUNTS" ]; then
-	    echo -n "$VMID: unmounting... " >&2
-	    for A in $FUSE_MOUNTS; do
-	    umount "$TMP_DIR/root/$A"
-	done
-	echo "done" >&2
-    fi
+   if [ -n "$FUSE_MOUNTS" ]; then
+      echo -n "$VMID: unmounting... " >&2
+      for A in $FUSE_MOUNTS; do
+         umount "$TMP_DIR/root/$A"
+      done
+      echo "done" >&2
+   fi
 
-    VM_MOUNTPOINTS=
-    vm_delsnapshot || update_status $?
+   VM_MOUNTPOINTS=
+   vm_delsnapshot || update_status $?
 
-    umount "$TMP_DIR"
-    rm -rf "$TMP_DIR"
-    return 0
+   umount "$TMP_DIR"
+   rm -rf "$TMP_DIR"
+   return 0
 }
 
 
 function process_job() {
-    local B
-    local C
-    local D
-    local SFX
-    local MOUNTPOINT
-    [ "$EXIT_ON_ERRORS" = "1" -a "$EXIT_STATUS" -ge 2 ] && return
+   local B
+   local C
+   local D
+   local SFX
+   local MOUNTPOINT
+   [ "$EXIT_ON_ERRORS" = "1" -a "$EXIT_STATUS" -ge 2 ] && return
 
-    set_snapsuffix
-    if ( echo "$1"|grep -q "^@" ); then
-	# backup pool
-	B=`echo "$1"|sed -e 's/^@//'|cut -d: -f1`
-	C=`pvesh get "/pools/$B" --output-format json 2>/dev/null | jq '.members[].vmid'`
-	if [ -z "$C" ]; then
-	    echo "Pool '$B' does not exist (case sensitive!). (WARNING)" >&2
-	    update_status 1
-	    return 1
-	fi
-	echo "Processing pool $B..." >&2
-	if ( echo "$1"|grep -q ":!$" ); then SFX=":!"
-	elif ( echo "$1"|grep -q ":$" ); then SFX=":"
-	else SFX=""
-	fi
-	for D in $C; do 
-	    process_job "$D$SFX"
-	done
+   set_snapsuffix
+   if ( echo "$1"|grep -q "^@" ); then
+      # backup pool
+      B=`echo "$1"|sed -e 's/^@//'|cut -d: -f1`
+      C=`pvesh get "/pools/$B" --output-format json 2>/dev/null | jq '.members[].vmid'`
+      if [ -z "$C" ]; then
+         echo "Pool '$B' does not exist (case sensitive!). (WARNING)" >&2
+         update_status 1
+         return 1
+      fi
+      echo "Processing pool $B..." >&2
+      if ( echo "$1"|grep -q ":!$" ); then SFX=":!"
+      elif ( echo "$1"|grep -q ":$" ); then SFX=":"
+      else SFX=""
+      fi
+      for D in $C; do 
+         process_job "$D$SFX"
+      done
 
-    elif ( echo "$1"|grep -q ":" ); then
-	find_vm `echo "$1"|cut -d: -f 1` || update_status $? || return $?
-	if [ "$VMTYPE" = "lxc" ]; then
-	    # backup directory tree
-	    (echo "$1"|grep -q '!$') && DUMP_ALL=1 || DUMP_ALL=0
-	    do_lxc_borgbackup
-	else
-	    # backup full vm
-	    do_backup || update_status $? || return $?
-	fi
+   elif ( echo "$1"|grep -q ":" ); then
+      find_vm `echo "$1"|cut -d: -f 1` || update_status $? || return $?
+      if [ "$VMTYPE" = "lxc" ]; then
+         # backup directory tree
+         (echo "$1"|grep -q '!$') && DUMP_ALL=1 || DUMP_ALL=0
+         do_lxc_borgbackup
+      else
+         # backup full vm
+         do_backup || update_status $? || return $?
+      fi
 
-    elif ( echo "$1"|grep -q "/" ); then
-	# backup local dataset
-	MOUNTPOINT=`realpath -e "$1" 2>/dev/null`
-	if [ -z "$MOUNTPOINT" ]; then
-	    echo "path not found: $1 (WARNING)" >&2
-	    update_status 1
-	    return 1
-	fi
-	if ( echo "$PROCESSED_MOUNTPOINTS"|grep -Fwq "$MOUNTPOINT" ); then
-	    echo "$MOUNTPOINT: already processed, skipping" >&2
-	    return
-	fi
-	PROCESSED_MOUNTPOINTS="$PROCESSED_MOUNTPOINTS $MOUNTPOINT"
-	backup_dataset "$MOUNTPOINT" || update_status $? || return $?
+   elif ( echo "$1"|grep -q "/" ); then
+      # backup local dataset
+      MOUNTPOINT=`realpath -e "$1" 2>/dev/null`
+      if [ -z "$MOUNTPOINT" ]; then
+         echo "path not found: $1 (WARNING)" >&2
+         update_status 1
+         return 1
+      fi
+      if ( echo "$PROCESSED_MOUNTPOINTS"|grep -Fwq "$MOUNTPOINT" ); then
+         echo "$MOUNTPOINT: already processed, skipping" >&2
+         return
+      fi
+      PROCESSED_MOUNTPOINTS="$PROCESSED_MOUNTPOINTS $MOUNTPOINT"
+      backup_dataset "$MOUNTPOINT" || update_status $? || return $?
 
-    else
-	# backup full vm
-	find_vm "$1" || update_status $? || return $?
-	do_backup || update_status $? || return $?
-    fi
-}
+   else
+      # backup full vm
+      find_vm "$1" || update_status $? || return $?
+      do_backup || update_status $? || return $?
+      fi
+   }
 
 #
 #
@@ -569,18 +569,18 @@ PROCESSED_MOUNTPOINTS=
 PRUNE_LIST=()
 
 for A in "$@"; do
-    if [ "$EXIT_ON_ERRORS" = "1" -a "$EXIT_STATUS" -ge 2 ]; then
-	echo "ABORTED" >&2
-	break
-    fi
-    process_job `echo "$A"|head -n 1|cut -f 1 -d " "`
+   if [ "$EXIT_ON_ERRORS" = "1" -a "$EXIT_STATUS" -ge 2 ]; then
+      echo "ABORTED" >&2
+      break
+   fi
+   process_job `echo "$A"|head -n 1|cut -f 1 -d " "`
 done
 
 [ ${#PRUNE_LIST[*]} -eq 0  ] || [ -z "$PRUNE_OPTS" ] || [ "$EXIT_STATUS" -gt 1 ] || [ "$EXIT_STATUS" -eq 1 -a "$PRUNE_ON_WARNINGS" != "1" ] || {
-    echo "Pruning old archives... " >&2
-    for A in ${PRUNE_LIST[@]}; do
-        borg prune --prefix "$A" $PRUNE_OPTS
-    done
+   echo "Pruning old archives... " >&2
+   for A in ${PRUNE_LIST[@]}; do
+      borg prune --prefix "$A" $PRUNE_OPTS
+   done
 }
 
 [ "$SHOW_SUMMARY" = "1" ] && borg info
