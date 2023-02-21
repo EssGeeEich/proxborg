@@ -57,6 +57,9 @@
 #BORG_OPTS="--compression=lz4 --exclude-caches"
 #BORG_OPTS="--compression=lz4 --list --progress"
 
+# Note that we always set --files-cache=ctime,size
+# when backing up files (LVM-style) as the inodes are likely different every time.
+
 # Set if you want to prune old archives automatically after successful backup.
 #PRUNE_OPTS="--keep-last=2 --keep-daily=7 --keep-weekly=6"
 #PRUNE_OPTS="--keep-last=2"
@@ -103,6 +106,11 @@ if ! which $NECESSARY_EXECUTABLES >/dev/null 2>&1; then
    echo "Make sure these tools are available: $NECESSARY_EXECUTABLES" >&2
    exit 255
 fi
+
+function pause {
+   echo "Press any key to continue"
+   read -n 1
+}
 
 function help {
    cat >&2 <<EOF
@@ -510,8 +518,9 @@ function do_lxc_borgbackup() {
    (
    cd "$TMP_DIR/root"
    echo "$VMID: dumping directory tree - calling borg [${NAME}${SNAP_SUFFIX}]... " >&2
-   # use BORG_FILES_CACHE_SUFFIX to help with borg's file cache
-   BORG_FILES_CACHE_SUFFIX="${VMID}" borg create --numeric-ids $BORG_OPTS "::${NAME}${SNAP_SUFFIX}" ./ --exclude 'lost+found' --exclude './tmp/?*' --exclude './var/tmp/?*' --exclude './var/run/?*.pid'
+   # NOTE: use BORG_FILES_CACHE_SUFFIX to help with borg's file cache
+   #  and ignore inode when comparing files (else everything will always look different... just ctime,size)
+   BORG_FILES_CACHE_SUFFIX="${VMID}" borg create --numeric-ids --files-cache=ctime,size $BORG_OPTS "::${NAME}${SNAP_SUFFIX}" ./ --exclude 'lost+found' --exclude './tmp/?*' --exclude './var/tmp/?*' --exclude './var/run/?*.pid'
    )
 
    if [ "$?" -eq "0" ]; then
