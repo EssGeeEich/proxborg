@@ -1,5 +1,6 @@
-NOTE: With release of Proxmox Backup Server this project became obsolete and is **not maintained** anymore.
-You may still use it, but I suggest PBS instead! PBS is superior in each field. :-)
+NOTE: The original author @michabbs abandoned this script after Proxmox Backup Server was released.
+PBS is very good, but,
+I still want to use borg to backup my VMs, so I have fixed it up to work with ordinary LVM-thin LVs (rather than only support ZFS or whole-partition backups).
 
 # PREREQUISITES
 
@@ -9,7 +10,11 @@ This script requires jq and acl packages. Install them:
 
     apt install jq acl
 
-This script requires fuse-overlayfs. Version at least 1.0 is *recommended*.
+This script requires fuse-overlayfs.
+Version at least 1.0 is *recommended* by the original author, although I've had
+luck with the older 0.3 on Debian Buster.
+
+Original author said:
 Unfortunately at the time of writing the newest version provided by Proxmox
 (or actually by Debian Buster) is 0.3. You may try it (apt install fuse-overlayfs),
 but better get newer package from Debian Bullseye. You may do it more or less
@@ -30,13 +35,9 @@ Storing backups in a borg repo is an excellent solution, because of its deduplic
 compression capabilities. Try it! :-)
 
 VERY IMPORTANT:
-THIS SCRIPT WORKS WITH *ZFS* ONLY!
-
-Proxmox server must be configured to use ZFS. Proxborg will not work with another storage.
-Proxmox server must be configured to use ZFS. Proxborg will not work with another storage.
-
-
-(Yes, that was twice.)
+THIS SCRIPT USED TO WORK WITH *ZFS* ONLY!
+It has been adjusted to work with plain LVM-thin images.
+I *assume* it still works with ZFS, but it has NOT BEEN TESTED!
 
 
 # CONFIGURATION
@@ -49,6 +50,10 @@ At least you must set:
 Possibly you will need also other borg configuration variables, like
 BORG_PASSPHRASE, BORG_KEY_FILE, BORG_BASE_DIR or BORG_FILES_CACHE_TTL.
 See there: https://borgbackup.readthedocs.io/en/stable/usage/general.html
+
+For LVM-thin style file-based backups,
+it will set BORG_FILES_CACHE_SUFFIX (for better file-match performance),
+and set --files-cache=ctime,size as the inodes probably change every time.
 
 
 # BASICS
@@ -157,6 +162,10 @@ system takes 1GB. You make 20 standard vzdump backups. Each backup takes about
 Now you switch to Borg: instead of keeping separate dumps - you put them
 together into one repository. Hocus-pocus-deduplication: The repository with
 backups of all 20 containers takes 0.5GB total!
+NOTE that backing up multiple containers in one archive isn't recommended,
+simply because if one backup is corrupted or compromised (somehow) then ALL
+the backups are compromised.
+Judge the risk/benefits yourself :)
 
 
 Usage:
@@ -311,9 +320,7 @@ If you want to archive children datasets too - archive them separately!
 
 - Will it work with non-ZFS storage?
 
-  NO! It was designed to backup data stored on ZFS. It will also not work if you have mixed
-  zfs and non-zfs storage in one container.
-  "The standard way" (full VM images) might still work, but it has never been tested.
+  Yes, it works for me now :)
 
 
 
@@ -339,9 +346,8 @@ In Linux consider using sfill.
 
 [Borg cache]
 
-In order to speed up backup process set BORG_FILES_CACHE_TTL accordingly.
-Generally it is good idea to set it to at least 2-3 times more than the number
-of VMs you are going store in repository.
+The old BORG_FILES_CACHE_TTL trick has been superseded by BORG_FILES_CACHE_SUFFIX,
+there is automatic settings for managing that now.
 Read this: https://borgbackup.readthedocs.io/en/stable/faq.html#it-always-chunks-all-my-files-even-unchanged-ones
 
 [ACLs]
@@ -352,3 +358,4 @@ This will make your life easier on restore.
 Note that separate backups of particular mountpoints will be done on different
 times, so your backup will not be "atomic". Depending on circumstances this
 might be bad or not-so-bad. :-)
+Each image is snapshotted one after the other, so not at exactly the same time.
