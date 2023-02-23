@@ -101,11 +101,27 @@ VZDUMP_OPTS="--quiet"
 echo "proxborg - Proxmox with BorgBackup made easy" >&2
 
 NECESSARY_EXECUTABLES="borg cat cut dd date echo getfacl grep head hostname jq pct printf pvesh pvesm qm realpath sed setfacl sleep sort tr vzdump xargs zfs"
-if ! which $NECESSARY_EXECUTABLES >/dev/null 2>&1; then
-   echo "Missing binaries!" >&2
-   echo "Make sure these tools are available: $NECESSARY_EXECUTABLES" >&2
-   exit 255
+for EXE in $NECESSARY_EXECUTABLES
+do
+	if ! which $EXE >/dev/null 2>&1; then
+	   echo "Missing binaries!" >&2
+	   echo "Make sure this tools is available: $EXE" >&2
+	   exit 255
+	fi
+done
+
+BORG_VERSION=`borg --version | cut -f2 -d' '`
+MIN_BORG_VERSION="1.2.3" # we tested with 1.2.3, so that should be the minimum
+echo "Using borg version $BORG_VERSION"
+
+if dpkg --compare-versions "$BORG_VERSION" lt $MIN_BORG_VERSION
+then
+	echo "ERROR - Borg should be at least version $MIN_BORG_VERSION"
+	exit 255
+else
+	echo "OK - Borg is at least $MIN_BORG_VERSION"
 fi
+
 
 function pause {
    echo "Press any key to continue"
