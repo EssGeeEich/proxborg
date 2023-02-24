@@ -485,7 +485,8 @@ function do_lxc_borgbackup() {
       update_status 2
       return 2
    fi
-   mount -t tmpfs -o posixacl tmpfs "$TMP_DIR"
+   # Used to have "-o posixacl" but that appears to no longer be a valid option
+   mount -t tmpfs tmpfs "$TMP_DIR"
    mkdir -p "$TMP_DIR/root"
 
    vm_snapshot || update_status $? || return $?
