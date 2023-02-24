@@ -173,6 +173,23 @@ function pipe_if_not_empty () {
 }
 
 
+function keep_trying_to_umount () {
+   while :
+   do
+      echo "Unmounting $1"
+      umount $1
+      if [ $? -eq 0 ]
+      then
+         echo "Unmounted ok"
+         break
+      fi
+      echo Failed to umount $1, sleeping 10 and trying again...
+      sleep 10
+      continue
+   done
+}
+
+
 function do_backup() {
    local NAME
    local NAME_SUFFIX
@@ -551,19 +568,23 @@ function do_lxc_borgbackup() {
    if [ -n "$FUSE_MOUNTS" ]; then
       echo -n "$VMID: unmounting... " >&2
       for A in $FUSE_MOUNTS; do
-         umount "$TMP_DIR/root/$A"
+         keep_trying_to_umount "$TMP_DIR/root/$A"
       done
       echo "done" >&2
    fi
 
    if [ "$LOWER_MOUNTED" = "1" ]; then
-      umount "$TMP_DIR"/lower*
+      for LOWER in "$TMP_DIR"/lower*
+      do
+         keep_trying_to_umount "$LOWER"
+      done
    fi
 
    VM_MOUNTPOINTS=
    vm_delsnapshot || update_status $?
 
-   umount "$TMP_DIR" && rm -rf "$TMP_DIR"
+   keep_trying_to_umount "$TMP_DIR"
+   rm -rf "$TMP_DIR"
    return 0
 }
 
