@@ -30,6 +30,9 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
+# Uncomment for nice debugging
+# export PS4='\033[0;33m+(${BASH_SOURCE}:${LINENO}):\033[0m ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
+
 ## CONFIGURATION
 
 # Edit here or provide values in environment.
@@ -100,7 +103,7 @@ VZDUMP_OPTS="--quiet"
 
 echo "proxborg - Proxmox with BorgBackup made easy" >&2
 
-NECESSARY_EXECUTABLES="borg cat cut dd date echo getfacl grep head hostname jq pct printf pvesh pvesm qm realpath sed setfacl sleep sort tr vzdump xargs zfs"
+NECESSARY_EXECUTABLES="borg cat cut dd date echo getfacl grep head hostname jq pct printf pvesh pvesm qm realpath sed setfacl sleep sort tr vzdump xargs zfs fuse-overlayfs"
 for EXE in $NECESSARY_EXECUTABLES
 do
 	if ! which $EXE >/dev/null 2>&1; then
