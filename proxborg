@@ -405,7 +405,7 @@ function get_mountpoints() {
             echo "/ $B 1"
          else
             echo "$VMID: invalid storage path: $B (abort)" >&2
-            update_status 1   # it is unlikely that we want to skip! abort!
+            update_status 2   # it is unlikely that we want to skip! abort!
          fi
       fi
    else
@@ -430,7 +430,7 @@ function get_mountpoints() {
             lvchange -a y -K "$SNAP_VG/$SNAP_VOL"
             if ! [ -a "$B" ]; then
                echo "$VMID: invalid storage path: $B (abort)" >&2
-               update_status 1   # it is unlikely that we want to skip! abort!
+               update_status 2   # it is unlikely that we want to skip! abort!
                continue
             fi
          fi
