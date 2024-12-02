@@ -288,8 +288,8 @@ function find_vm() {
       # by numeric id
       #	A=`pct list|grep "^${1} "|sed -e 's/ *$//g'|grep -oE '[^ ]+$'`
       #	B=`qm list|sed -e 's/^ *//' -e 's/  \+/ /g'|grep "^${1} "|cut -d ' ' -f 2|tr "\n" " "|sed 's/ *$//g'`
-      A=`pvesh get /nodes/$MYHOSTNAME/lxc --output-format json|jq -j ".[] | select(.vmid==\"$1\") | .name"`
-      B=`pvesh get /nodes/$MYHOSTNAME/qemu --output-format json|jq -j ".[] | select(.vmid==\"$1\") | .name"`
+      A=`pvesh get /nodes/$MYHOSTNAME/lxc --output-format json|jq -j ".[] | select(.vmid==$1) | .name"`
+      B=`pvesh get /nodes/$MYHOSTNAME/qemu --output-format json|jq -j ".[] | select(.vmid==$1) | .name"`
       if [ -z "$A" -a -z "$B" ] ; then
          echo "${1}: vm id not found (WARNING)" >&2
          return 1
